@@ -1,0 +1,6 @@
+python-telegram-bot[job-queue]
+apscheduler
+google-generativeai
+python-dotenv
+sqlalchemy
+tzdata
