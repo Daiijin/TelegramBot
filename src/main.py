@@ -7,7 +7,7 @@ from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, Messa
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from llm_engine import configure_genai, get_secretary_response, extract_schedule_intent
+from llm_engine import get_secretary_response, extract_schedule_intent
 from scheduler_manager import SchedulerManager
 from database import (
     init_db, add_user, update_user_goal, get_user_goals, add_task, get_tasks_for_date, 
@@ -132,7 +132,7 @@ logging.basicConfig(
 
 # Initialize modules
 init_db()
-configure_genai(GEMINI_API_KEY)
+
 scheduler = SchedulerManager()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
