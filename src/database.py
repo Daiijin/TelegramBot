@@ -5,10 +5,7 @@ from datetime import datetime
 
 # Build paths inside the project like this: os.path.join(BASE_DIR, ...)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_DIR = os.path.join(BASE_DIR, "data")
-if not os.path.exists(DATA_DIR):
-    os.makedirs(DATA_DIR)
-DB_PATH = os.path.join(DATA_DIR, "bot_data.db")
+DB_PATH = os.path.join(BASE_DIR, "data", "bot_data.db")
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
