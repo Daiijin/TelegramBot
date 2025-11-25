@@ -2,6 +2,7 @@ import os
 import json
 import logging
 import requests
+import time
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
@@ -22,6 +23,28 @@ def get_current_time_str():
     # Use Vietnam time explicitly
     tz = ZoneInfo("Asia/Ho_Chi_Minh")
     return datetime.now(tz).strftime('%Y-%m-%d %H:%M')
+
+def call_gemini_with_retry(payload, max_retries=3):
+    """
+    Helper to call Gemini API with retries and increased timeout.
+    """
+    for attempt in range(max_retries):
+        try:
+            response = requests.post(
+                GEMINI_API_URL,
+                headers={"Content-Type": "application/json"},
+                json=payload,
+                timeout=30  # Increased timeout to 30s
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"Gemini API attempt {attempt + 1} failed: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(2)  # Wait 2s before retrying
+            else:
+                logger.error(f"Gemini API failed after {max_retries} attempts.")
+                raise e
 
 def get_secretary_response(history, user_input, schedule_context=""):
     """
@@ -59,15 +82,7 @@ RESPONSE:
     }
 
     try:
-        response = requests.post(
-            GEMINI_API_URL,
-            headers={"Content-Type": "application/json"},
-            json=payload,
-            timeout=10
-        )
-        response.raise_for_status()
-        
-        data = response.json()
+        data = call_gemini_with_retry(payload)
         if "candidates" in data and data["candidates"]:
             return data["candidates"][0]["content"]["parts"][0]["text"].strip()
         else:
@@ -76,12 +91,12 @@ RESPONSE:
             
     except Exception as e:
         logger.error(f"Error calling Gemini API: {e}")
-        return "Dạ mạng đang hơi yếu, em chưa nghe rõ ạ."
+        return "Dạ mạng đang hơi yếu, em chưa nghe rõ ạ. Anh kiểm tra lại mạng giúp em nhé."
 
 def extract_schedule_intent(user_input, history=None):
     """
     Uses Gemini (via REST) to extract schedule intent from user input.
-    Returns a JSON object.
+    Returns a JSON object with "intents" list.
     """
     current_time_str = get_current_time_str()
     
@@ -109,50 +124,52 @@ RULES FOR `schedule_reminder`:
 
 JSON OUTPUT FORMAT:
 {{
-  "intent": "schedule_reminder" | "check_schedule" | "delete_schedule" | "set_goal" | "chat" | "clarify_schedule",
-  "description": "string (content of the task)",
-  "run_date": "string (ISO 8601) or null",
-  "remind_before_minutes": int,
-  "type": "one_off" | "recurring",
-  "days_of_week": [],
-  "conversational_response": "string (A natural, polite Vietnamese response confirming the action or asking for details)"
+  "intents": [
+    {{
+      "intent": "schedule_reminder" | "check_schedule" | "delete_schedule" | "set_goal" | "chat" | "clarify_schedule",
+      "description": "string (content of the task)",
+      "run_date": "string (ISO 8601) or null",
+      "remind_before_minutes": int,
+      "type": "one_off" | "recurring",
+      "days_of_week": [],
+      "conversational_response": "string (A natural, polite Vietnamese response confirming the action or asking for details)"
+    }}
+  ]
 }}
 
 EXAMPLES:
 Input: "Nhắc tôi họp lúc 9h sáng mai"
 Output: {{
-  "intent": "schedule_reminder",
-  "description": "Họp",
-  "run_date": "2025-11-26T09:00:00",
-  "remind_before_minutes": 0,
-  "type": "one_off",
-  "conversational_response": "Dạ vâng, em sẽ nhắc anh họp lúc 9 giờ sáng mai ạ."
+  "intents": [
+    {{
+      "intent": "schedule_reminder",
+      "description": "Họp",
+      "run_date": "2025-11-26T09:00:00",
+      "remind_before_minutes": 0,
+      "type": "one_off",
+      "conversational_response": "Dạ vâng, em sẽ nhắc anh họp lúc 9 giờ sáng mai ạ."
+    }}
+  ]
 }}
 
 Input: "Sáng mai nhắc tôi đi họp" (VAGUE TIME)
 Output: {{
-  "intent": "clarify_schedule",
-  "conversational_response": "Dạ sáng mai mấy giờ anh muốn đi họp ạ?"
+  "intents": [
+    {{
+      "intent": "clarify_schedule",
+      "conversational_response": "Dạ sáng mai mấy giờ anh muốn đi họp ạ?"
+    }}
+  ]
 }}
 
 Input: "Chào em"
 Output: {{
-  "intent": "chat",
-  "conversational_response": "Dạ em chào anh ạ. Anh cần em giúp gì về lịch trình không ạ?"
-}}
-
-Input: "Thời tiết hôm nay thế nào?"
-Output: {{
-  "intent": "chat",
-  "conversational_response": "Dạ em chỉ là thư ký lịch trình nên không rõ về thời tiết ạ. Anh hỏi em về lịch họp nhé!"
-}}
-
-Input: "Nhắc tôi lúc 8h tối nay trước 15p"
-Output: {{
-  "intent": "schedule_reminder",
-  "run_date": "2025-11-25T20:00:00",
-  "remind_before_minutes": 15,
-  "conversational_response": "Dạ em sẽ nhắc anh lúc 8h tối nay và báo trước 15 phút ạ."
+  "intents": [
+    {{
+      "intent": "chat",
+      "conversational_response": "Dạ em chào anh ạ. Anh cần em giúp gì về lịch trình không ạ?"
+    }}
+  ]
 }}
 
 RETURN ONLY THE JSON OBJECT.
@@ -168,15 +185,7 @@ RETURN ONLY THE JSON OBJECT.
     }
 
     try:
-        response = requests.post(
-            GEMINI_API_URL,
-            headers={"Content-Type": "application/json"},
-            json=payload,
-            timeout=10
-        )
-        response.raise_for_status()
-        
-        data = response.json()
+        data = call_gemini_with_retry(payload)
         if "candidates" in data and data["candidates"]:
             text_response = data["candidates"][0]["content"]["parts"][0]["text"].strip()
             # Clean up markdown code blocks if present
@@ -187,8 +196,8 @@ RETURN ONLY THE JSON OBJECT.
             return json.loads(text_response)
         else:
             logger.error(f"Gemini API returned no candidates: {data}")
-            return {"intent": "chat", "conversational_response": "Dạ em đang gặp lỗi hệ thống, anh thử lại sau nhé."}
+            return {"intents": [{"intent": "chat", "conversational_response": "Dạ em đang gặp lỗi hệ thống, anh thử lại sau nhé."}]}
             
     except Exception as e:
         logger.error(f"Error calling Gemini API: {e}")
-        return {"intent": "chat", "conversational_response": "Dạ mạng đang yếu, em chưa xử lý được ạ."}
+        return {"intents": [{"intent": "chat", "conversational_response": "Dạ mạng đang yếu, em chưa xử lý được ạ. Anh kiểm tra lại kết nối giúp em nhé."}]}
